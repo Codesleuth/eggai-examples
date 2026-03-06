@@ -1,8 +1,9 @@
 import json
+import os
 
 from lite_llm_agent import LiteLlmAgent
-from shared import AGENT_REGISTRY, agents_channel, humans_channel
 from memory import messages_history_memory
+from shared import AGENT_REGISTRY, agents_channel, humans_channel
 
 
 def build_triage_system_prompt(agent_registry):
@@ -33,7 +34,7 @@ You are an advanced Triage Assistant for a multi-agent system. Your primary resp
 triage_agent = LiteLlmAgent(
     name="TriageAgent",
     system_message=build_triage_system_prompt(AGENT_REGISTRY),
-    model="openai/gpt-3.5-turbo"
+    model=os.getenv("TRIAGE_AGENT_MODEL", "openai/gpt-3.5-turbo")
 )
 
 
@@ -111,4 +112,3 @@ async def triage_write_memory(msg):
         messages_history_memory.extend(chat_messages)
     except Exception as e:
         print(f"Error in TriageAgent: {e}")
-

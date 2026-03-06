@@ -1,3 +1,5 @@
+import os
+
 from lite_llm_agent import LiteLlmAgent
 from shared import agents_channel
 
@@ -18,7 +20,7 @@ claims_agent = LiteLlmAgent(
         "\n"
         "If the request extends beyond your scope or requires further escalation, ask the TriageAgent to forward the conversation to the EscalationAgent."
     ),
-    model="openai/gpt-3.5-turbo",
+    model=os.getenv("CLAIMS_AGENT_MODEL", "openai/gpt-3.5-turbo"),
 )
 
 @claims_agent.subscribe(channel=agents_channel, filter_func=lambda msg: msg["type"] == "claims_request")

@@ -1,4 +1,5 @@
 import json
+import os
 
 from lite_llm_agent import LiteLlmAgent
 from shared import agents_channel
@@ -23,7 +24,7 @@ policy_agent = LiteLlmAgent(
         "   - Ensure clarity and avoid using jargon or complex terminology.\n\n"
         "Remember: Stay within your scope of handling policy-related inquiries. Always strive to provide accurate and prompt assistance."
     ),
-    model="openai/gpt-3.5-turbo"
+    model=os.getenv("POLICY_AGENT_MODEL", "openai/gpt-3.5-turbo")
 )
 
 policies_database = [
