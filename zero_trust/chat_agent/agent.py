@@ -28,10 +28,11 @@ async def exchange_token_obo(caller_jwt: str) -> str:
     auth_server_url = os.environ["AUTH_SERVER_URL"]
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            f"{auth_server_url}/token",
+            f"{auth_server_url}/auth/token",
             data={
                 "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
                 "assertion": caller_jwt,
+                "audience": "transactions_server",
                 "scope": "transactions:read",
             },
         )

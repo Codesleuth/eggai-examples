@@ -3,6 +3,7 @@ import os
 import sys
 
 import dotenv
+import httpx
 
 dotenv.load_dotenv()
 
@@ -11,7 +12,8 @@ from rich.prompt import Prompt
 
 from eggai import Agent, Channel
 from shared import agents_channel, humans_channel
-from jwt_utils import create_jwt
+
+AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:8000")
 
 console = Console()
 
@@ -32,11 +34,9 @@ async def display_response(msg):
     try:
         chat_messages = msg.get("payload", {}).get("chat_messages", [])
         if chat_messages:
-            # Update local memory with the full history from the agent
             messages_history_memory.clear()
             messages_history_memory.extend(chat_messages)
 
-            # Display the latest assistant message
             latest = chat_messages[-1]
             if latest.get("role") == "assistant":
                 clear_last_line()
@@ -48,7 +48,48 @@ async def display_response(msg):
         console.print(f"[red]Error displaying response: {e}[/red]")
 
 
-async def ask_input(stop_event):
+async def authenticate() -> tuple[str, str, str]:
+    """Log in to the auth server and obtain an id_token and scoped access_token.
+
+    Returns (id_token, access_token, user_name).
+    """
+    username = os.environ.get("DEMO_USERNAME", "alice")
+    password = os.environ.get("DEMO_PASSWORD", "password")
+
+    async with httpx.AsyncClient(base_url=AUTH_SERVER_URL) as client:
+        # Step 1: Login to get id_token
+        resp = await client.post(
+            "/auth/login",
+            json={"username": username, "password": password},
+        )
+        resp.raise_for_status()
+        login_data = resp.json()
+        id_token = login_data["id_token"]
+
+        # Step 2: Exchange id_token for a scoped access_token targeting chat_agent
+        resp = await client.post(
+            "/auth/token",
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:id-token",
+                "assertion": id_token,
+                "audience": "chat_agent",
+                "scope": "chat",
+            },
+        )
+        resp.raise_for_status()
+        token_data = resp.json()
+        access_token = token_data["access_token"]
+
+    # Decode the id_token payload to get the user's name (no verification needed
+    # here — the auth server just issued it and we trust the local connection)
+    import jwt
+    claims = jwt.decode(id_token, options={"verify_signature": False})
+    user_name = claims.get("name", username)
+
+    return id_token, access_token, user_name
+
+
+async def ask_input(stop_event, access_token: str):
     loop = asyncio.get_event_loop()
     while not stop_event.is_set():
         try:
@@ -63,24 +104,15 @@ async def ask_input(stop_event):
             elif user_input.strip() == "":
                 continue
             else:
-                # Create a JWT for this request
-                token = create_jwt(
-                    subject="user@example.com",
-                    audience="chat_agent",
-                    secret=os.environ["JWT_SECRET"],
-                )
-
-                # Add user message to local history
                 messages_history_memory.append(
                     {"role": "user", "content": user_input}
                 )
 
-                # Publish with JWT and full chat history
                 await humans_channel.publish({
                     "type": "user_message",
                     "payload": {
                         "chat_messages": list(messages_history_memory),
-                        "caller_jwt": token,
+                        "caller_jwt": access_token,
                     },
                 })
         except Exception as e:
@@ -93,14 +125,24 @@ async def main():
     try:
         console.print("[bold cyan]Zero-Trust JWT Bearer (OBO) Chat Demo[/bold cyan]")
         console.print(
-            "[dim]Each message is signed with a JWT. The chat agent exchanges it "
-            "for an OBO token to access the transactions server.[/dim]"
+            "[dim]Authenticating with auth server...[/dim]"
+        )
+
+        id_token, access_token, user_name = await authenticate()
+
+        console.print(f"\n[bold green]Hello, {user_name}![/bold green]")
+        console.print(
+            "[dim]Your identity has been verified. Messages are signed with a "
+            "scoped access token. The chat agent exchanges it for an OBO token "
+            "to access downstream services.[/dim]"
         )
         console.print("[dim]Type 'exit' or 'quit' to stop.[/dim]\n")
 
         await display_agent.run()
-        asyncio.create_task(ask_input(stop_event))
+        asyncio.create_task(ask_input(stop_event, access_token))
         await stop_event.wait()
+    except httpx.HTTPStatusError as e:
+        console.print(f"[red]Authentication failed: {e.response.text}[/red]")
     except asyncio.CancelledError:
         pass
     finally:

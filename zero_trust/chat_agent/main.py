@@ -32,12 +32,12 @@ async def handle_user_message(msg):
         caller_jwt = payload["caller_jwt"]
         chat_messages = payload["chat_messages"]
 
-        # Validate the caller's JWT
+        # Validate the caller's access token (issued by auth_server, signed with ACCESS_SECRET)
         try:
             claims = validate_jwt(
                 caller_jwt,
                 audience="chat_agent",
-                secret=os.environ["JWT_SECRET"],
+                secret=os.environ["ACCESS_SECRET"],
             )
             logger.info("JWT validated for sub=%s", claims["sub"])
         except Exception as e:
