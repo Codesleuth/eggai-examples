@@ -156,7 +156,7 @@ def _verify_ownership(db: sqlite3.Connection, sub: str, account_id: str):
 # Endpoints
 # ---------------------------------------------------------------------------
 @app.get("/me/accounts")
-async def list_accounts(
+def list_accounts(
     claims: dict = Depends(validate_access_token),
     db: sqlite3.Connection = Depends(get_db),
 ):
@@ -171,7 +171,7 @@ async def list_accounts(
 
 
 @app.get("/me/accounts/{account_id}/transactions")
-async def list_transactions(
+def list_transactions(
     account_id: str,
     claims: dict = Depends(validate_access_token),
     db: sqlite3.Connection = Depends(get_db),

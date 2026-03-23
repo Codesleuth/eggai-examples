@@ -17,8 +17,6 @@ from agent import chat_agent
 from jwt_utils import validate_jwt
 from shared import agents_channel, humans_channel
 
-messages_history = []
-
 
 def filter_for_chat_agent(msg) -> bool:
     return msg.get("type") == "user_message"

@@ -37,21 +37,22 @@ No service trusts any other service implicitly. Every call carries a scoped, sig
                                                client_id=chat-agent
                                                client_secret=CHAT_AGENT_CLIENT_SECRET
                                                assertion=user's access_token
-                                               scope=api://transactions-server/Transactions.Read
+                                               scope=api://accounts-service/Accounts.Read
                                                requested_token_use=on_behalf_of
                                                                    ──────────►  auth_server
                                                                    ◄──────────  ← OBO access_token
-                                                                                  (aud=transactions-server,
+                                                                                  (aud=accounts-service,
                                                                                    act.sub=chat-agent,
-                                                                                   signed with TRANSACTIONS_SERVER_CLIENT_SECRET)
+                                                                                   signed with ACCOUNTS_SERVICE_CLIENT_SECRET)
 
-                                            6. GET /transactions
+                                            6. GET /me/accounts  (or /me/accounts/{id}/transactions)
                                                Authorization: Bearer <OBO token>
-                                                                   ──────────►  transactions_server
+                                                                   ──────────►  accounts_service
                                                                                 Validates token using
-                                                                                TRANSACTIONS_SERVER_CLIENT_SECRET
-                                                                                checks aud=transactions-server
-                                                                   ◄──────────  ← transaction data
+                                                                                ACCOUNTS_SERVICE_CLIENT_SECRET
+                                                                                checks aud=accounts-service
+                                                                                enforces account ownership
+                                                                   ◄──────────  ← account / transaction data
 
                                             7. Publishes response  ──────────►  Redpanda (zt.agents topic)
 
@@ -67,7 +68,7 @@ Each registered app has a `client_id` and `client_secret`. Access tokens targeti
 |-------|----------|-------------|--------------|
 | id_token | `auth_server` | `ID_SECRET` | auth_server only |
 | access_token for chat-agent | `chat-agent` | `CHAT_AGENT_CLIENT_SECRET` | chat_agent |
-| OBO access_token for transactions-server | `transactions-server` | `TRANSACTIONS_SERVER_CLIENT_SECRET` | transactions_server |
+| OBO access_token for accounts-service | `accounts-service` | `ACCOUNTS_SERVICE_CLIENT_SECRET` | accounts_service |
 
 This mirrors how the Microsoft Identity Platform works with RS256 (IdP signs with private key, apps validate with public key), adapted for HS256 where each app's secret serves as both the signing and validation key.
 
@@ -92,6 +93,7 @@ Pre-authorized exchange for public clients (e.g. the CLI). Exchanges an `id_toke
 - **Input:** `assertion` (id_token), `client_id` (target app), `scope`
 - **Output:** `{access_token, token_type, expires_in}`
 - **access_token claims:** `sub`, `name`, `email`, `aud=<target_app>`, `scp`, `azp=cli`
+- **Security:** the scope's audience must match `client_id`; a public client cannot mint tokens for any audience other than the one it explicitly identifies
 
 **On-Behalf-Of** (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`)
 
@@ -107,19 +109,19 @@ Configured via environment variables, loaded at startup:
 
 | App | Client ID | Allowed Scopes |
 |-----|-----------|----------------|
-| Chat Agent | `chat-agent` | `api://chat-agent/Chat.ReadWrite`, `api://transactions-server/Transactions.Read` |
-| Transactions Server | `transactions-server` | `api://transactions-server/Transactions.Read` |
+| Chat Agent | `chat-agent` | `api://chat-agent/Chat.ReadWrite`, `api://accounts-service/Accounts.Read` |
+| Accounts Service | `accounts-service` | `api://accounts-service/Accounts.Read` |
 
 ## Project Structure
 
 ```
 zero_trust/
-├── main.py                      # Host CLI: authenticates, sends messages, displays responses
-├── display_agent.py             # EggAI agent that subscribes to zt.agents and renders responses
+├── main.py                      # Host CLI: login, token exchange, chat UI
+├── display_agent.py             # EggAI agent: subscribes to zt.agents, renders responses
 ├── shared.py                    # Kafka channel definitions (zt.agents, zt.humans)
 ├── jwt_utils.py                 # JWT validation helper with clock-skew leeway
-├── lite_llm_agent.py            # LiteLLM agent wrapper (shared utility)
-├── docker-compose.yml           # Full stack: Redpanda, auth_server, chat_agent, transactions_server
+├── lite_llm_agent.py            # LiteLLM agent wrapper with tool-calling loop and context injection
+├── docker-compose.yml           # Full stack: Redpanda, auth_server, accounts_service, chat_agent
 ├── .env.example                 # Configuration template
 ├── requirements.txt             # Host-side Python dependencies
 ├── auth_server/
@@ -128,14 +130,28 @@ zero_trust/
 │   └── requirements.txt
 ├── chat_agent/
 │   ├── main.py                  # EggAI agent: validates JWT, runs LLM, publishes response
-│   ├── agent.py                 # LiteLLM agent with get_transactions tool + OBO exchange
+│   ├── agent.py                 # LiteLLM agent with get_accounts / get_transactions tools + OBO exchange
 │   ├── Dockerfile
 │   └── requirements.txt
-└── transactions_server/
-    ├── main.py                  # FastAPI resource server: validates OBO tokens, serves data
+└── accounts_service/
+    ├── main.py                  # FastAPI resource server: in-memory SQLite, validates OBO tokens, enforces account ownership
     ├── Dockerfile
     └── requirements.txt
 ```
+
+## Demo Data
+
+The accounts service is seeded with in-memory SQLite data on startup:
+
+| User | Account ID | Account Name |
+|------|-----------|--------------|
+| alice | ACC-001 | Current Account |
+| alice | ACC-002 | Savings |
+| alice | ACC-003 | Cash ISA |
+| bob | ACC-004 | Current Account |
+| bob | ACC-005 | Savings |
+
+Each account has sample transactions across categories (groceries, food & drink, transport, shopping, etc.). The service enforces ownership — a token for `alice` cannot access Bob's accounts, regardless of what account ID the LLM supplies.
 
 ## Environment Variables
 
@@ -147,13 +163,17 @@ ID_SECRET=<min 32 chars>
 CHAT_AGENT_CLIENT_ID=chat-agent
 CHAT_AGENT_CLIENT_SECRET=<min 32 chars>
 
-# App registration: Transactions Server
-TRANSACTIONS_SERVER_CLIENT_ID=transactions-server
-TRANSACTIONS_SERVER_CLIENT_SECRET=<min 32 chars>
+# App registration: Accounts Service
+ACCOUNTS_SERVICE_CLIENT_ID=accounts-service
+ACCOUNTS_SERVICE_CLIENT_SECRET=<min 32 chars>
 
 # LLM provider (choose one)
 OPENAI_API_KEY=sk-...
 CHAT_AGENT_MODEL=openai/gpt-4o-mini
+
+# or
+ANTHROPIC_API_KEY=sk-ant-...
+CHAT_AGENT_MODEL=claude-3-haiku-20240307
 ```
 
 ## Running the Demo
@@ -161,12 +181,19 @@ CHAT_AGENT_MODEL=openai/gpt-4o-mini
 ```bash
 cd zero_trust
 cp .env.example .env   # Fill in secrets and LLM API key
-docker compose up -d   # Start Redpanda, auth_server, chat_agent, transactions_server
+docker compose up -d   # Start Redpanda, auth_server, accounts_service, chat_agent
 pip install -r requirements.txt
 python main.py
 ```
 
-Ask the agent about transactions (e.g. "Show me my recent transactions") to trigger the full OBO chain.
+Log in as `alice` or `bob` (press Enter to default to alice), then ask questions like:
+
+- "What accounts do I have?"
+- "Show me my recent transactions"
+- "How much did I spend on groceries last month?"
+- "Which account has the most activity?"
+
+The agent will call `get_accounts` to discover the user's accounts, then `get_transactions` for the relevant account — each call performing a full OBO token exchange behind the scenes.
 
 ## Production Considerations
 
