@@ -1,17 +1,17 @@
 import asyncio
 import os
+import uuid
 
 import dotenv
 import httpx
 import jwt
-
-dotenv.load_dotenv()
-
-from display_agent import display_agent, messages_history_memory
+from display_agent import create_display_agent
 from eggai import Channel
 from rich.console import Console
 from rich.prompt import Prompt
 from shared import humans_channel
+
+dotenv.load_dotenv()
 
 AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:8000")
 
@@ -56,7 +56,7 @@ def get_claim(token: str, claim: str) -> str | None:
     return payload.get(claim)
 
 
-async def ask_input(stop_event, access_token: str):
+async def ask_input(stop_event: asyncio.Event, session_id: str, access_token: str, messages_history: list):
     loop = asyncio.get_event_loop()
     while not stop_event.is_set():
         try:
@@ -71,14 +71,12 @@ async def ask_input(stop_event, access_token: str):
             elif user_input.strip() == "":
                 continue
             else:
-                messages_history_memory.append(
-                    {"role": "user", "content": user_input}
-                )
-
+                messages_history.append({"role": "user", "content": user_input})
                 await humans_channel.publish({
                     "type": "user_message",
+                    "session_id": session_id,
                     "payload": {
-                        "chat_messages": list(messages_history_memory),
+                        "chat_messages": list(messages_history),
                         "caller_jwt": access_token,
                     },
                 })
@@ -88,12 +86,12 @@ async def ask_input(stop_event, access_token: str):
 
 
 async def main():
+    session_id = str(uuid.uuid4())
     stop_event = asyncio.Event()
+    display_agent, messages_history = create_display_agent(session_id)
     try:
         console.print("[bold cyan]Zero-Trust JWT Bearer (OBO) Chat Demo[/bold cyan]")
-        console.print(
-            "[dim]Authenticating with auth server...[/dim]"
-        )
+        console.print("[dim]Authenticating with auth server...[/dim]")
 
         username = os.environ.get("DEMO_USERNAME", "alice")
         password = os.environ.get("DEMO_PASSWORD", "password")
@@ -119,7 +117,7 @@ async def main():
         console.print("[dim]Type 'exit' or 'quit' to stop.[/dim]\n")
 
         await display_agent.run()
-        asyncio.create_task(ask_input(stop_event, access_token))
+        asyncio.create_task(ask_input(stop_event, session_id, access_token, messages_history))
         await stop_event.wait()
     except httpx.HTTPStatusError as e:
         console.print(f"[red]Authentication failed: {e.response.text}[/red]")

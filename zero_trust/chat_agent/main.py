@@ -30,6 +30,7 @@ def filter_for_chat_agent(msg) -> bool:
 )
 async def handle_user_message(msg):
     try:
+        session_id = msg.get("session_id")
         payload = msg["payload"]
         caller_jwt = payload["caller_jwt"]
         chat_messages = payload["chat_messages"]
@@ -78,6 +79,7 @@ async def handle_user_message(msg):
         logger.info("Response generated for sub=%s", claims["sub"])
         await agents_channel.publish({
             "type": "chat_response",
+            "session_id": session_id,
             "payload": {
                 "chat_messages": updated_messages,
             },
