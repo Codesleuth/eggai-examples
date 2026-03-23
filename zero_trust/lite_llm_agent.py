@@ -6,6 +6,9 @@ import litellm
 
 from eggai import Agent
 
+CONTEXT_PARAM = "context"
+
+
 def function_to_json_schema(func: Callable) -> dict:
     parameters = {"type": "object", "properties": {}, "required": []}
     sig = inspect.signature(func)
@@ -14,7 +17,7 @@ def function_to_json_schema(func: Callable) -> dict:
     description = " ".join([line for line in docstring if line.strip() and not line.lstrip().startswith(':')])
 
     for param in sig.parameters.values():
-        if param.name == "self":
+        if param.name in ("self", CONTEXT_PARAM):
             continue
         if param.default == inspect.Parameter.empty:
             parameters["required"].append(param.name)
@@ -47,6 +50,7 @@ class LiteLlmAgent(Agent):
     async def completion(self, **kwargs):
         model = kwargs.pop("model", self.model)
         messages = kwargs.pop("messages", [])
+        tool_context = kwargs.pop("tool_context", None)
         if self.system_message:
             messages = [{"role": "system", "content": self.system_message}, *messages]
 
@@ -65,6 +69,9 @@ class LiteLlmAgent(Agent):
                 tool_name = tool_call.function.name
                 function_to_call = self.tools_map.get(tool_name)
                 tool_args = json.loads(tool_call.function.arguments)
+                # Inject tool_context if the function accepts a context parameter
+                if tool_context is not None and CONTEXT_PARAM in inspect.signature(function_to_call).parameters:
+                    tool_args[CONTEXT_PARAM] = tool_context
                 if inspect.iscoroutinefunction(function_to_call):
                     function_response = await function_to_call(**tool_args)
                 else:

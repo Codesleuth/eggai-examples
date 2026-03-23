@@ -17,10 +17,6 @@ chat_agent = LiteLlmAgent(
     model=os.environ.get("CHAT_AGENT_MODEL", "openai/gpt-4o-mini"),
 )
 
-# Stores the current caller's access token so tools can access it for OBO exchange.
-# Acceptable for a single-user demo where messages are processed sequentially.
-_current_caller_jwt: str | None = None
-
 
 async def exchange_token_obo(caller_jwt: str) -> str:
     """Perform an On-Behalf-Of token exchange, mirroring the Microsoft Identity
@@ -59,14 +55,14 @@ async def exchange_token_obo(caller_jwt: str) -> str:
     name="get_transactions",
     description="Fetch the user's recent transactions from the transactions server",
 )
-async def get_transactions():
+async def get_transactions(context: dict):
     """Fetch the user's recent transactions from the transactions server."""
-    global _current_caller_jwt
-    if not _current_caller_jwt:
+    caller_jwt = context.get("caller_jwt")
+    if not caller_jwt:
         return {"error": "No authenticated session"}
 
     try:
-        obo_token = await exchange_token_obo(_current_caller_jwt)
+        obo_token = await exchange_token_obo(caller_jwt)
     except httpx.HTTPStatusError as e:
         logger.error("OBO token exchange failed: %s", e)
         return {"error": f"Token exchange failed: {e.response.status_code}"}

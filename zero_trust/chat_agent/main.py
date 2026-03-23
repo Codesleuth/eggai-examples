@@ -13,7 +13,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("chat_agent")
 
-import agent as agent_module
 from agent import chat_agent
 from jwt_utils import validate_jwt
 from shared import agents_channel, humans_channel
@@ -55,11 +54,13 @@ async def handle_user_message(msg):
             })
             return
 
-        # Make the JWT available to tools for OBO exchange
-        agent_module._current_caller_jwt = caller_jwt
-
-        # Call the LLM with the full conversation history
-        response = await chat_agent.completion(messages=list(chat_messages))
+        # Call the LLM with the full conversation history.
+        # The caller_jwt is passed via tool_context so tools can perform OBO
+        # exchange without any module-level state.
+        response = await chat_agent.completion(
+            messages=list(chat_messages),
+            tool_context={"caller_jwt": caller_jwt},
+        )
 
         if not isinstance(response, ModelResponse):
             raise ValueError("Expected ModelResponse from agent completion")
