@@ -2,4 +2,4 @@ eggai==0.1.16
 python-dotenv==1.0.1
 litellm==1.61.15
 PyJWT==2.9.0
-httpx==0.28.0
+httpx==0.28.1

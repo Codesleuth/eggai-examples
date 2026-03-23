@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 import time
 
 import jwt
@@ -59,7 +60,7 @@ def _authenticate_client(client_id: str, client_secret: str) -> dict:
     registration = APP_REGISTRY.get(client_id)
     if not registration:
         raise HTTPException(status_code=401, detail="invalid_client: unknown client_id")
-    if registration["client_secret"] != client_secret:
+    if not secrets.compare_digest(registration["client_secret"], client_secret):
         raise HTTPException(status_code=401, detail="invalid_client: bad client_secret")
     return registration
 
@@ -178,13 +179,40 @@ def _handle_id_token_exchange(assertion: str, client_id: str, scope: str) -> dic
     The CLI is a public client — it presents the user's id_token and the
     client_id of the target app. The access_token is signed with the target
     app's client_secret so that app can validate it.
+
+    Security constraints:
+      - The scope's audience must match client_id; a public client cannot mint
+        tokens for an audience other than the one it explicitly identifies.
+      - Requested scopes are validated against the target app's allowed_scopes.
     """
     id_secret = os.environ["ID_SECRET"]
 
     if not client_id:
         raise HTTPException(status_code=400, detail="invalid_request: client_id required")
 
-    target_app_id = _resolve_target_audience(scope) if scope else client_id
+    if not scope:
+        raise HTTPException(status_code=400, detail="invalid_request: scope required")
+
+    # Derive target audience from scope and enforce it matches client_id.
+    # This prevents a caller from using client_id=chat-agent while requesting
+    # a token scoped to a different API (e.g. transactions-server).
+    target_app_id = _resolve_target_audience(scope)
+    if target_app_id != client_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"invalid_scope: scope audience '{target_app_id}' must match "
+                f"client_id '{client_id}'"
+            ),
+        )
+
+    # Validate the requested scopes against the target app's allowed_scopes.
+    target_registration = APP_REGISTRY.get(target_app_id)
+    if not target_registration:
+        raise HTTPException(
+            status_code=400, detail=f"invalid_audience: unknown app '{target_app_id}'"
+        )
+    _validate_scopes(target_registration, scope)
 
     try:
         id_claims = jwt.decode(

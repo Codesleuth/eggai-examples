@@ -1,9 +1,8 @@
 import inspect
 import json
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import litellm
-
 from eggai import Agent
 
 CONTEXT_PARAM = "context"
@@ -62,13 +61,39 @@ class LiteLlmAgent(Agent):
 
         final_params = {**self.local_kwargs, **kwargs, "model": model, "messages": messages}
         response = await litellm.acompletion(**final_params)
-        tool_calls = response.choices[0].message.tool_calls
+
+        if not isinstance(response, litellm.ModelResponse):
+            raise ValueError(f"Expected litellm.ModelResponse, got {type(response)}")
+
+        choice = response.choices[0]
+
+        if not isinstance(choice, litellm.Choices):
+            raise ValueError(f"Expected litellm.Choices, got {type(choice)}")
+
+        tool_calls = choice.message.tool_calls
         if tool_calls:
-            messages.append(response.choices[0].message)
+            messages.append(choice.message)
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
                 function_to_call = self.tools_map.get(tool_name)
-                tool_args = json.loads(tool_call.function.arguments)
+                if function_to_call is None:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": json.dumps({"error": f"unknown tool '{tool_name}'"}),
+                    })
+                    continue
+                try:
+                    tool_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError as e:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": json.dumps({"error": f"malformed tool arguments: {e}"}),
+                    })
+                    continue
                 # Inject tool_context if the function accepts a context parameter
                 if tool_context is not None and CONTEXT_PARAM in inspect.signature(function_to_call).parameters:
                     tool_args[CONTEXT_PARAM] = tool_context
@@ -88,7 +113,7 @@ class LiteLlmAgent(Agent):
 
         return response
 
-    def tool(self, name: str = None, description: str = None):
+    def tool(self, name: str | None = None, description: str | None = None):
         def decorator(func: Callable):
             json_schema = function_to_json_schema(func)
             if name is not None:

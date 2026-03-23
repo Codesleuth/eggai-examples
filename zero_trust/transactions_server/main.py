@@ -76,7 +76,7 @@ def validate_access_token(request: Request) -> dict:
         return claims
     except jwt.InvalidTokenError as e:
         logger.warning("Invalid OBO token: %s", e)
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 @app.get("/transactions")

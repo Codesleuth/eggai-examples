@@ -74,9 +74,9 @@ services:
     command: -c "
       echo 'Waiting for Redpanda cluster to be ready...' &&
       sleep 5 &&
-      rpk topic create zt.humans --brokers=redpanda:9092 &&
+      rpk topic create zt.humans --brokers=redpanda:9092 --if-not-exists &&
       echo 'Topic zt.humans created successfully!' &&
-      rpk topic create zt.agents --brokers=redpanda:9092 &&
+      rpk topic create zt.agents --brokers=redpanda:9092 --if-not-exists &&
       echo 'Topic zt.agents created successfully!'"
 
   auth_server:

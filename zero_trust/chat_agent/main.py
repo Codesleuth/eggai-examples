@@ -29,8 +29,9 @@ def filter_for_chat_agent(msg) -> bool:
     filter_func=filter_for_chat_agent,
 )
 async def handle_user_message(msg):
+    session_id = msg.get("session_id")
+    chat_messages = []
     try:
-        session_id = msg.get("session_id")
         payload = msg["payload"]
         caller_jwt = payload["caller_jwt"]
         chat_messages = payload["chat_messages"]
@@ -47,6 +48,7 @@ async def handle_user_message(msg):
             logger.warning("JWT validation failed: %s", e)
             await agents_channel.publish({
                 "type": "chat_response",
+                "session_id": session_id,
                 "payload": {
                     "chat_messages": chat_messages + [
                         {"role": "assistant", "content": f"Authentication failed: {e}"}
@@ -88,8 +90,9 @@ async def handle_user_message(msg):
         logger.error("Error handling message: %s", e, exc_info=True)
         await agents_channel.publish({
             "type": "chat_response",
+            "session_id": session_id,
             "payload": {
-                "chat_messages": [
+                "chat_messages": chat_messages + [
                     {"role": "assistant", "content": f"Error: {e}"}
                 ],
             },
