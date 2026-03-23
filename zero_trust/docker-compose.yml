@@ -89,17 +89,15 @@ services:
     env_file:
       - .env
 
-  transactions_server:
-    build: ./transactions_server
-    container_name: transactions_server
+  accounts_service:
+    build: ./accounts_service
+    container_name: accounts_service
     networks:
       - redpanda_network
     ports:
-      - "8001:8001"
+      - "8002:8002"
     environment:
-      TRANSACTIONS_SERVER_CLIENT_SECRET: ${TRANSACTIONS_SERVER_CLIENT_SECRET}
-    env_file:
-      - .env
+      ACCOUNTS_SERVICE_CLIENT_SECRET: ${ACCOUNTS_SERVICE_CLIENT_SECRET}
 
   chat_agent:
     build:
@@ -113,12 +111,12 @@ services:
         condition: service_healthy
       auth_server:
         condition: service_started
-      transactions_server:
+      accounts_service:
         condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       AUTH_SERVER_URL: http://auth_server:8000
-      TRANSACTIONS_SERVER_URL: http://transactions_server:8001
+      ACCOUNTS_SERVICE_URL: http://accounts_service:8002
       CHAT_AGENT_CLIENT_ID: ${CHAT_AGENT_CLIENT_ID}
       CHAT_AGENT_CLIENT_SECRET: ${CHAT_AGENT_CLIENT_SECRET}
     env_file:

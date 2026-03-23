@@ -37,6 +37,17 @@ def function_to_json_schema(func: Callable) -> dict:
         },
     }
 
+def extract_choices(response):
+    if not isinstance(response, litellm.ModelResponse):
+        raise ValueError(f"Expected litellm.ModelResponse, got {type(response)}")
+
+    choices = response.choices[0]
+
+    if not isinstance(choices, litellm.Choices):
+        raise ValueError(f"Expected litellm.Choices, got {type(choices)}")
+
+    return choices
+
 class LiteLlmAgent(Agent):
     def __init__(self, name: str, model: Optional[str] = None, system_message: Optional[str] = None, **kwargs):
         super().__init__(name)
@@ -61,18 +72,13 @@ class LiteLlmAgent(Agent):
 
         final_params = {**self.local_kwargs, **kwargs, "model": model, "messages": messages}
         response = await litellm.acompletion(**final_params)
+        choices = extract_choices(response)
 
-        if not isinstance(response, litellm.ModelResponse):
-            raise ValueError(f"Expected litellm.ModelResponse, got {type(response)}")
-
-        choice = response.choices[0]
-
-        if not isinstance(choice, litellm.Choices):
-            raise ValueError(f"Expected litellm.Choices, got {type(choice)}")
-
-        tool_calls = choice.message.tool_calls
-        if tool_calls:
-            messages.append(choice.message)
+        while True:
+            tool_calls = choices.message.tool_calls
+            if not tool_calls:
+                break
+            messages.append(choices.message)
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
                 function_to_call = self.tools_map.get(tool_name)
@@ -97,19 +103,28 @@ class LiteLlmAgent(Agent):
                 # Inject tool_context if the function accepts a context parameter
                 if tool_context is not None and CONTEXT_PARAM in inspect.signature(function_to_call).parameters:
                     tool_args[CONTEXT_PARAM] = tool_context
-                if inspect.iscoroutinefunction(function_to_call):
-                    function_response = await function_to_call(**tool_args)
-                else:
-                    function_response = function_to_call(**tool_args)
+                try:
+                    if inspect.iscoroutinefunction(function_to_call):
+                        function_response = await function_to_call(**tool_args)
+                    else:
+                        function_response = function_to_call(**tool_args)
+                except TypeError as e:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": json.dumps({"error": f"invalid arguments for '{tool_name}': {e}"}),
+                    })
+                    continue
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_name,
                     "content": json.dumps(function_response)
                 })
-            final_params = {**self.local_kwargs,  **kwargs, "model": model, "messages": messages}
+            final_params = {**self.local_kwargs, **kwargs, "model": model, "messages": messages}
             response = await litellm.acompletion(**final_params)
-            return response
+            choices = extract_choices(response)
 
         return response
 

@@ -87,14 +87,17 @@ async def ask_input(stop_event: asyncio.Event, session_id: str, access_token: st
 
 async def main():
     session_id = str(uuid.uuid4())
+    loop = asyncio.get_event_loop()
     stop_event = asyncio.Event()
     display_agent, messages_history = create_display_agent(session_id)
     try:
         console.print("[bold cyan]Zero-Trust JWT Bearer (OBO) Chat Demo[/bold cyan]")
-        console.print("[dim]Authenticating with auth server...[/dim]")
 
-        username = os.environ.get("DEMO_USERNAME", "alice")
-        password = os.environ.get("DEMO_PASSWORD", "password")
+        username = await loop.run_in_executor(
+            None,
+            lambda: Prompt.ask("Log in as", choices=["alice", "bob"], default="alice"),
+        )
+        password = "password"
 
         id_token = await authenticate(username, password)
         access_token = await get_token(

@@ -38,14 +38,14 @@ def _load_app_registry():
         "display_name": "Chat Agent",
         "allowed_scopes": [
             "api://chat-agent/Chat.ReadWrite",
-            "api://transactions-server/Transactions.Read",
+            "api://accounts-service/Accounts.Read",
         ],
     }
-    APP_REGISTRY["transactions-server"] = {
-        "client_secret": os.environ["TRANSACTIONS_SERVER_CLIENT_SECRET"],
-        "display_name": "Transactions Server",
+    APP_REGISTRY["accounts-service"] = {
+        "client_secret": os.environ["ACCOUNTS_SERVICE_CLIENT_SECRET"],
+        "display_name": "Accounts Service",
         "allowed_scopes": [
-            "api://transactions-server/Transactions.Read",
+            "api://accounts-service/Accounts.Read",
         ],
     }
     logger.info(
