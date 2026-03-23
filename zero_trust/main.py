@@ -57,7 +57,7 @@ def get_claim(token: str, claim: str) -> str | None:
 
 
 async def ask_input(stop_event: asyncio.Event, session_id: str, access_token: str, messages_history: list):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while not stop_event.is_set():
         try:
             user_input = await loop.run_in_executor(
@@ -87,7 +87,7 @@ async def ask_input(stop_event: asyncio.Event, session_id: str, access_token: st
 
 async def main():
     session_id = str(uuid.uuid4())
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
     display_agent, messages_history = create_display_agent(session_id)
     try:

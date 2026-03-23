@@ -1,14 +1,13 @@
 import logging
 import os
 import sqlite3
+from contextlib import asynccontextmanager
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("accounts_service")
-
-app = FastAPI(title="Accounts Service")
 
 _db: sqlite3.Connection | None = None
 
@@ -17,8 +16,8 @@ def get_db() -> sqlite3.Connection:
     return _db
 
 
-@app.on_event("startup")
-def _init_db():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global _db
     _db = sqlite3.connect(":memory:", check_same_thread=False)
     _db.row_factory = sqlite3.Row
@@ -102,7 +101,11 @@ def _init_db():
     )
     _db.commit()
     logger.info("In-memory SQLite seeded: 5 accounts, transactions for alice and bob")
+    yield
+    _db.close()
 
+
+app = FastAPI(title="Accounts Service", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # Token validation

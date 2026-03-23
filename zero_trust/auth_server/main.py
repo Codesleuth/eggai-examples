@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 import time
+from contextlib import asynccontextmanager
 
 import jwt
 from fastapi import FastAPI, Form, HTTPException
@@ -9,8 +10,6 @@ from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("auth_server")
-
-app = FastAPI(title="Auth Server (Identity Provider)")
 
 # ---------------------------------------------------------------------------
 # Demo users — in production this would be a database / external IdP
@@ -31,8 +30,8 @@ DEMO_USERS = {
 APP_REGISTRY: dict[str, dict] = {}
 
 
-@app.on_event("startup")
-def _load_app_registry():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     APP_REGISTRY["chat-agent"] = {
         "client_secret": os.environ["CHAT_AGENT_CLIENT_SECRET"],
         "display_name": "Chat Agent",
@@ -53,6 +52,10 @@ def _load_app_registry():
         len(APP_REGISTRY),
         list(APP_REGISTRY.keys()),
     )
+    yield
+
+
+app = FastAPI(title="Auth Server (Identity Provider)", lifespan=lifespan)
 
 
 def _authenticate_client(client_id: str, client_secret: str) -> dict:

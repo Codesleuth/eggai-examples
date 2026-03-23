@@ -27,7 +27,7 @@ def function_to_json_schema(func: Callable) -> dict:
         if len(docstring) > 0:
             for line in docstring:
                 if line.startswith(f":param {param.name}:"):
-                    parameters["properties"][param.name]["description"] = line.split(":param ")[1]
+                    parameters["properties"][param.name]["description"] = line.split(f":param {param.name}:")[1].strip()
     return {
         "type": "function",
         "function": {

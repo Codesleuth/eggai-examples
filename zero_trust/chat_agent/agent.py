@@ -51,6 +51,43 @@ async def _exchange_token_obo(caller_jwt: str) -> str:
         return resp.json()["access_token"]
 
 
+async def _accounts_get(path: str, caller_jwt: str, log_msg: str) -> dict:
+    """Obtain an OBO token and call the accounts service. Returns a structured
+    error dict on any failure so tool calls degrade gracefully."""
+    try:
+        obo_token = await _exchange_token_obo(caller_jwt)
+    except KeyError as e:
+        logger.error("Missing environment variable: %s", e)
+        return {"error": f"Configuration error: missing env var {e}"}
+    except httpx.RequestError as e:
+        logger.error("Auth server unreachable: %s", e)
+        return {"error": f"Auth server unreachable: {type(e).__name__}"}
+    except httpx.HTTPStatusError as e:
+        logger.error("OBO exchange failed: %s", e)
+        return {"error": f"Token exchange failed: {e.response.status_code}"}
+
+    try:
+        accounts_url = os.environ["ACCOUNTS_SERVICE_URL"]
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{accounts_url}{path}",
+                headers={"Authorization": f"Bearer {obo_token}"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info(log_msg, data.get("on_behalf_of"))
+            return data
+    except KeyError as e:
+        logger.error("Missing environment variable: %s", e)
+        return {"error": f"Configuration error: missing env var {e}"}
+    except httpx.RequestError as e:
+        logger.error("Accounts service unreachable: %s", e)
+        return {"error": f"Accounts service unreachable: {type(e).__name__}"}
+    except httpx.HTTPStatusError as e:
+        logger.error("Accounts service request failed: %s", e)
+        return {"error": f"Request failed: {e.response.status_code}"}
+
+
 @chat_agent.tool(
     name="get_accounts",
     description="List all accounts belonging to the authenticated user",
@@ -65,30 +102,11 @@ async def get_accounts(context: dict):
     if not caller_jwt:
         return {"error": "No authenticated session"}
 
-    try:
-        obo_token = await _exchange_token_obo(caller_jwt)
-    except httpx.HTTPStatusError as e:
-        logger.error("OBO exchange failed: %s", e)
-        return {"error": f"Token exchange failed: {e.response.status_code}"}
-
-    accounts_url = os.environ["ACCOUNTS_SERVICE_URL"]
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{accounts_url}/me/accounts",
-                headers={"Authorization": f"Bearer {obo_token}"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            logger.info(
-                "Fetched %d accounts on behalf of %s",
-                len(data.get("accounts", [])),
-                data.get("on_behalf_of"),
-            )
-            return data
-    except httpx.HTTPStatusError as e:
-        logger.error("Account list request failed: %s", e)
-        return {"error": f"Account list failed: {e.response.status_code}"}
+    return await _accounts_get(
+        "/me/accounts",
+        caller_jwt,
+        "Fetched accounts on behalf of %s",
+    )
 
 
 @chat_agent.tool(
@@ -108,28 +126,8 @@ async def get_transactions(account_id: str, context: dict):
     if not caller_jwt:
         return {"error": "No authenticated session"}
 
-    try:
-        obo_token = await _exchange_token_obo(caller_jwt)
-    except httpx.HTTPStatusError as e:
-        logger.error("OBO exchange failed: %s", e)
-        return {"error": f"Token exchange failed: {e.response.status_code}"}
-
-    accounts_url = os.environ["ACCOUNTS_SERVICE_URL"]
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{accounts_url}/me/accounts/{account_id}/transactions",
-                headers={"Authorization": f"Bearer {obo_token}"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            logger.info(
-                "Fetched %d transactions for account_id=%s on behalf of %s",
-                len(data.get("transactions", [])),
-                account_id,
-                data.get("on_behalf_of"),
-            )
-            return data
-    except httpx.HTTPStatusError as e:
-        logger.error("Transactions request failed: %s", e)
-        return {"error": f"Transactions request failed: {e.response.status_code}"}
+    return await _accounts_get(
+        f"/me/accounts/{account_id}/transactions",
+        caller_jwt,
+        f"Fetched transactions for account_id={account_id} on behalf of %s",
+    )
