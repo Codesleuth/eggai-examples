@@ -1,8 +1,9 @@
 import sys
 
-from eggai import Agent
+from eggai import Agent, Channel
 from rich.console import Console
-from shared import agents_channel
+
+agents_channel = Channel("zt.agents")
 
 console = Console()
 

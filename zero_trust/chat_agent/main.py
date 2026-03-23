@@ -3,6 +3,7 @@ import logging
 import os
 
 import dotenv
+from eggai import Channel
 from litellm import Choices, ModelResponse
 
 dotenv.load_dotenv()
@@ -15,7 +16,9 @@ logger = logging.getLogger("chat_agent")
 
 from agent import chat_agent
 from jwt_utils import validate_jwt
-from shared import agents_channel, humans_channel
+
+agents_channel = Channel("zt.agents")
+humans_channel = Channel("zt.humans")
 
 
 def filter_for_chat_agent(msg) -> bool:

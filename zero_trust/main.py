@@ -9,11 +9,13 @@ from display_agent import create_display_agent
 from eggai import Channel
 from rich.console import Console
 from rich.prompt import Prompt
-from shared import humans_channel
 
 dotenv.load_dotenv()
 
 AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:8000")
+
+
+humans_channel = Channel("zt.humans")
 
 console = Console()
 
