@@ -18,7 +18,7 @@ def create_display_agent(session_id: str) -> tuple[Agent, list]:
     with the latest chat_response for this session.
     """
     messages_history: list = []
-    agent = Agent(name="DisplayAgent")
+    agent = Agent(name=f"DisplayAgent-{session_id}")
 
     def filter_for_session(msg) -> bool:
         return (
