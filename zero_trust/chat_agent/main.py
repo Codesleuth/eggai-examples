@@ -15,16 +15,19 @@ logger = logging.getLogger("chat_agent")
 
 import agent as agent_module
 from agent import chat_agent
-from eggai import Channel
 from jwt_utils import validate_jwt
 from shared import agents_channel, humans_channel
 
 messages_history = []
 
 
+def filter_for_chat_agent(msg) -> bool:
+    return msg.get("type") == "user_message"
+
+
 @chat_agent.subscribe(
     channel=humans_channel,
-    filter_func=lambda msg: msg["type"] == "user_message",
+    filter_func=filter_for_chat_agent,
 )
 async def handle_user_message(msg):
     try:
@@ -32,12 +35,12 @@ async def handle_user_message(msg):
         caller_jwt = payload["caller_jwt"]
         chat_messages = payload["chat_messages"]
 
-        # Validate the caller's access token (issued by auth_server, signed with ACCESS_SECRET)
+        # Validate the caller's access token (signed with this app's client_secret)
         try:
             claims = validate_jwt(
                 caller_jwt,
-                audience="chat_agent",
-                secret=os.environ["ACCESS_SECRET"],
+                audience="chat-agent",
+                secret=os.environ["CHAT_AGENT_CLIENT_SECRET"],
             )
             logger.info("JWT validated for sub=%s", claims["sub"])
         except Exception as e:

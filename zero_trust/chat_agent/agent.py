@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 
@@ -18,22 +17,36 @@ chat_agent = LiteLlmAgent(
     model=os.environ.get("CHAT_AGENT_MODEL", "openai/gpt-4o-mini"),
 )
 
-# Stores the current caller JWT so tools can access it.
+# Stores the current caller's access token so tools can access it for OBO exchange.
 # Acceptable for a single-user demo where messages are processed sequentially.
 _current_caller_jwt: str | None = None
 
 
 async def exchange_token_obo(caller_jwt: str) -> str:
-    """Performs urn:ietf:params:oauth:grant-type:jwt-bearer token exchange."""
+    """Perform an On-Behalf-Of token exchange, mirroring the Microsoft Identity
+    Platform OBO flow.
+
+    Sends:
+      - grant_type = urn:ietf:params:oauth:grant-type:jwt-bearer
+      - client_id + client_secret  (proves this app's identity)
+      - assertion = user's access_token  (delegated user identity)
+      - scope = target API scope
+      - requested_token_use = on_behalf_of
+    """
     auth_server_url = os.environ["AUTH_SERVER_URL"]
+    client_id = os.environ["CHAT_AGENT_CLIENT_ID"]
+    client_secret = os.environ["CHAT_AGENT_CLIENT_SECRET"]
+
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{auth_server_url}/auth/token",
             data={
                 "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "assertion": caller_jwt,
-                "audience": "transactions_server",
-                "scope": "transactions:read",
+                "scope": "api://transactions-server/Transactions.Read",
+                "requested_token_use": "on_behalf_of",
             },
         )
         resp.raise_for_status()

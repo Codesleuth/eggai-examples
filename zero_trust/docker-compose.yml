@@ -96,6 +96,8 @@ services:
       - redpanda_network
     ports:
       - "8001:8001"
+    environment:
+      TRANSACTIONS_SERVER_CLIENT_SECRET: ${TRANSACTIONS_SERVER_CLIENT_SECRET}
     env_file:
       - .env
 
@@ -117,5 +119,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       AUTH_SERVER_URL: http://auth_server:8000
       TRANSACTIONS_SERVER_URL: http://transactions_server:8001
+      CHAT_AGENT_CLIENT_ID: ${CHAT_AGENT_CLIENT_ID}
+      CHAT_AGENT_CLIENT_SECRET: ${CHAT_AGENT_CLIENT_SECRET}
     env_file:
       - .env
