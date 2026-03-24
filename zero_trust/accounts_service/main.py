@@ -16,6 +16,9 @@ app = FastAPI(title="Accounts Service")
 # Token validation
 # ---------------------------------------------------------------------------
 def validate_access_token(request: Request) -> dict:
+    # In production, JWT validation would be handled by an API gateway or
+    # sidecar proxy (e.g. Envoy, Kong, AWS API Gateway) before the request
+    # reaches this service. It is done inline here for demo clarity.
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")

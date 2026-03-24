@@ -11,53 +11,86 @@ No service trusts any other service implicitly. Every call carries a scoped, sig
   ──────────────                              ──────────────
 
   1. POST /auth/login
-     {username, password}  ──────────────►  auth_server
-                           ◄──────────────  ← id_token (aud=auth_server, signed with ID_SECRET)
+     {username, password}  ────────────────►  auth_server
+                           ◄────────────────  ← id_token (aud=auth_server, signed with ID_SECRET)
 
   2. POST /auth/token
      grant_type=token-exchange
      assertion=id_token
      client_id=chat-agent
      scope=api://chat-agent/Chat.ReadWrite
-                           ──────────────►  auth_server
-                           ◄──────────────  ← access_token (aud=chat-agent,
-                                              signed with CHAT_AGENT_CLIENT_SECRET)
+                           ────────────────►  auth_server
+                           ◄────────────────  ← access_token (aud=chat-agent,
+                                                signed with CHAT_AGENT_CLIENT_SECRET)
 
-  3. Publish to Kafka      ──────────────►  Redpanda (zt.humans topic)
+  3. Publish to Kafka      ────────────────►  Redpanda (zt.humans topic)
      {caller_jwt, chat_messages}
 
-                                            chat_agent (subscribes to zt.humans)
-                                            ─────────
-                                            4. Validates access_token
-                                               using CHAT_AGENT_CLIENT_SECRET
-                                               checks aud=chat-agent
+                                              chat_agent (subscribes to zt.humans)
+                                              ─────────
+                                              4. Validates access_token
+                                                 using CHAT_AGENT_CLIENT_SECRET
+                                                 checks aud=chat-agent
 
-                                            5. POST /auth/token (OBO exchange)
-                                               grant_type=jwt-bearer
-                                               client_id=chat-agent
-                                               client_secret=CHAT_AGENT_CLIENT_SECRET
-                                               assertion=user's access_token
-                                               scope=api://accounts-service/Accounts.Read
-                                               requested_token_use=on_behalf_of
-                                                                   ──────────►  auth_server
-                                                                   ◄──────────  ← OBO access_token
-                                                                                  (aud=accounts-service,
-                                                                                   act.sub=chat-agent,
-                                                                                   signed with ACCOUNTS_SERVICE_CLIENT_SECRET)
+                                              5. POST /auth/token (OBO exchange)
+                                                 grant_type=jwt-bearer
+                                                 client_id=chat-agent
+                                                 client_secret=CHAT_AGENT_CLIENT_SECRET
+                                                 assertion=user's access_token
+                                                 scope=api://accounts-service/Accounts.Read
+                                                 requested_token_use=on_behalf_of
+                                                                     ──────────►  auth_server
+                                                                     ◄──────────  ← OBO access_token
+                                                                                    (aud=accounts-service,
+                                                                                     act.sub=chat-agent,
+                                                                                     signed with ACCOUNTS_SERVICE_CLIENT_SECRET)
 
-                                            6. GET /me/accounts  (or /me/accounts/{id}/transactions)
-                                               Authorization: Bearer <OBO token>
-                                                                   ──────────►  accounts_service
-                                                                                Validates token using
-                                                                                ACCOUNTS_SERVICE_CLIENT_SECRET
-                                                                                checks aud=accounts-service
-                                                                                enforces account ownership
-                                                                   ◄──────────  ← account / transaction data
+                                              6. GET /me/accounts  (or /me/accounts/{id}/transactions)
+                                                 Authorization: Bearer <OBO token>
+                                                                     ──────────►  accounts_service
+                                                                                  Validates token using
+                                                                                  ACCOUNTS_SERVICE_CLIENT_SECRET
+                                                                                  checks aud=accounts-service
+                                                                                  enforces account ownership
+                                                                     ◄──────────  ← account / transaction data
 
-                                            7. Publishes response  ──────────►  Redpanda (zt.agents topic)
+                                              7. Publishes response  ──────────►  Redpanda (zt.agents topic)
 
   8. DisplayAgent receives response
-     from zt.agents topic  ◄──────────────  Redpanda
+     from zt.agents topic  ◄────────────────  Redpanda
+```
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as main.py (host)
+    participant Kafka as Redpanda
+    participant Auth as auth_server
+    participant Chat as chat_agent
+    participant Accounts as accounts_service
+
+    User->>CLI: choose username
+    CLI->>Auth: POST /auth/login {username, password}
+    Auth-->>CLI: id_token (aud=auth-server, signed with ID_SECRET)
+
+    CLI->>Auth: POST /auth/token<br/>grant_type=token-exchange<br/>assertion=id_token<br/>scope=api://chat-agent/Chat.ReadWrite
+    Auth-->>CLI: access_token (aud=chat-agent, signed with CHAT_AGENT_CLIENT_SECRET)
+
+    CLI->>Kafka: publish {caller_jwt, chat_messages} → zt.humans
+
+    Kafka->>Chat: consume zt.humans
+    Chat->>Chat: validate access_token<br/>(aud=chat-agent, CHAT_AGENT_CLIENT_SECRET)
+
+    Chat->>Auth: POST /auth/token<br/>grant_type=jwt-bearer (OBO)<br/>assertion=user access_token<br/>scope=api://accounts-service/Accounts.Read
+    Auth-->>Chat: OBO token (aud=accounts-service, act.sub=chat-agent,<br/>signed with ACCOUNTS_SERVICE_CLIENT_SECRET)
+
+    Chat->>Accounts: GET /me/accounts<br/>Authorization: Bearer <OBO token>
+    Accounts->>Accounts: validate token (aud=accounts-service)<br/>enforce account ownership
+    Accounts-->>Chat: account / transaction data
+
+    Chat->>Kafka: publish response → zt.agents
+    Kafka->>CLI: DisplayAgent consumes zt.agents
+    CLI->>User: display response
 ```
 
 ## Token Signing Model

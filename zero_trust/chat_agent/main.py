@@ -37,7 +37,9 @@ async def handle_user_message(msg):
         caller_jwt = payload["caller_jwt"]
         chat_messages = payload["chat_messages"]
 
-        # Validate the caller's access token (signed with this app's client_secret)
+        # Validate the caller's access token (signed with this app's client_secret).
+        # This would normally be done __outside__ of this process by some bouncer/middleware system,
+        # but is done here for demo purposes.
         try:
             claims = validate_jwt(
                 caller_jwt,
