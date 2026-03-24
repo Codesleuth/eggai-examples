@@ -88,6 +88,9 @@ async def ask_input(stop_event: asyncio.Event, session_id: str, access_token: st
 
 
 async def main():
+    # task stored here so it can be cancelled on shutdown
+    background_tasks: set[asyncio.Task[None]] = set()
+
     session_id = str(uuid.uuid4())
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -122,7 +125,11 @@ async def main():
         console.print("[dim]Type 'exit' or 'quit' to stop.[/dim]\n")
 
         await display_agent.run()
-        asyncio.create_task(ask_input(stop_event, session_id, access_token, messages_history))
+
+        task = asyncio.create_task(ask_input(stop_event, session_id, access_token, messages_history))
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+
         await stop_event.wait()
     except httpx.HTTPStatusError as e:
         console.print(f"[red]Authentication failed: {e.response.text}[/red]")
